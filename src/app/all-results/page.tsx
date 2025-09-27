@@ -1,11 +1,15 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { db } from "../../lib/firebase";
 import {
   collection,
   getDocs,
   query,
   where,
+  orderBy,
+  startAfter,
+  startAt,
+  limit,
   QueryDocumentSnapshot,
   DocumentData,
 } from "firebase/firestore";
@@ -26,55 +30,94 @@ type PatientData = {
 };
 
 export default function AllResults() {
-  const [results, setResults] = useState<TestData[]>([]);
+  const [pageResults, setPageResults] = useState<TestData[]>([]);
   const [patients, setPatients] = useState<Record<string, PatientData>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [searchField, setSearchField] = useState<"patientId" | "name" | "genotype">("patientId");
+  const [pageCursors, setPageCursors] = useState<QueryDocumentSnapshot<DocumentData>[]>([]);
+  const [currentPage, setCurrentPage] = useState(0);
+  const pageSize = 100;
 
-  // Fetch all results
-  useEffect(() => {
-    const fetchResults = async () => {
-      setLoading(true);
-      setError("");
-      try {
-        const querySnapshot = await getDocs(collection(db, "tests"));
-        const allResults = querySnapshot.docs.map(
-          (doc: QueryDocumentSnapshot<DocumentData>) => doc.data() as TestData
-        );
-        setResults(allResults);
+  const fetchPage = async (pageIndex: number) => {
+    setLoading(true);
+    setError("");
+    try {
+      let q;
 
-        // Fetch all patients
-        const uniqueIds = Array.from(new Set(allResults.map((r) => r.patientId)));
+      if (pageIndex === 0) {
+        q = query(collection(db, "tests"), orderBy("dateTaken"), limit(pageSize));
+      } else {
+        const cursor = pageCursors[pageIndex - 1];
+        q = query(collection(db, "tests"), orderBy("dateTaken"), startAfter(cursor), limit(pageSize));
+      }
+
+      const snap = await getDocs(q);
+
+      if (!snap.empty) {
+        const batchResults = snap.docs.map((doc) => doc.data() as TestData);
+        setPageResults(batchResults);
+
+        // Add last doc of this page to cursors if going forward
+        if (!pageCursors[pageIndex]) {
+          setPageCursors((prev) => {
+            const newCursors = [...prev];
+            newCursors[pageIndex] = snap.docs[snap.docs.length - 1];
+            return newCursors;
+          });
+        }
+
+        // Fetch patients for this batch
+        const uniqueIds = Array.from(new Set(batchResults.map((r) => r.patientId)));
         const patientMap: Record<string, PatientData> = {};
         for (const pid of uniqueIds) {
-          const patientQ = query(collection(db, "patients"), where("patientId", "==", pid));
-          const patientSnap = await getDocs(patientQ);
-          if (!patientSnap.empty) {
-            patientMap[pid] = patientSnap.docs[0].data() as PatientData;
+          if (!patients[pid]) {
+            const patientSnap = await getDocs(query(collection(db, "patients"), where("patientId", "==", pid)));
+            if (!patientSnap.empty) {
+              patientMap[pid] = patientSnap.docs[0].data() as PatientData;
+            }
           }
         }
-        setPatients(patientMap);
-      } catch (err) {
-        setError("❌ Failed to fetch results.");
-        console.error(err);
+        setPatients((prev) => ({ ...prev, ...patientMap }));
+      } else {
+        setError("No results for this page.");
       }
-      setLoading(false);
-    };
-    fetchResults();
+    } catch (err) {
+      console.error(err);
+      setError("❌ Failed to fetch results.");
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchPage(0);
+    setCurrentPage(0);
   }, []);
 
-  // Filtered results
-  const filteredResults = results.filter((rec) => {
+  const goNext = () => {
+    fetchPage(currentPage + 1);
+    setCurrentPage((p) => p + 1);
+  };
+
+  const goPrev = () => {
+    if (currentPage > 0) {
+      fetchPage(currentPage - 1);
+      setCurrentPage((p) => p - 1);
+    }
+  };
+
+  const filteredResults = useMemo(() => {
+  return pageResults.filter((rec) => {
     const patient = patients[rec.patientId];
     if (!searchTerm.trim()) return true;
     const term = searchTerm.toLowerCase();
-    if (searchField === "patientId") return rec.patientId.toLowerCase().includes(term);
-    if (searchField === "name") return patient?.name.toLowerCase().includes(term);
-    if (searchField === "genotype") return rec.genotype.toLowerCase().includes(term);
+    if (searchField === "patientId") return rec.patientId?.toLowerCase().includes(term);
+    if (searchField === "name") return patient?.name?.toLowerCase().includes(term);
+    if (searchField === "genotype") return (rec.genotype ?? "").toLowerCase().includes(term);
     return true;
   });
+}, [pageResults, patients, searchTerm, searchField]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-black via-red-950 to-black flex flex-col items-center py-8 px-2 sm:px-4">
@@ -99,6 +142,25 @@ export default function AllResults() {
             <option value="name">Name</option>
             <option value="genotype">Genotype</option>
           </select>
+        </div>
+
+        {/* Pagination Buttons */}
+        <div className="flex justify-between mb-4">
+          <button
+            onClick={goPrev}
+            disabled={currentPage === 0 || loading}
+            className="px-4 py-2 bg-rose-100 border border-rose-300 text-red-900 rounded-lg font-semibold hover:bg-rose-200 transition"
+          >
+            ◀ Previous
+          </button>
+          <span className="text-red-900 font-bold">Page {currentPage + 1}</span>
+          <button
+            onClick={goNext}
+            disabled={loading || pageResults.length < pageSize}
+            className="px-4 py-2 bg-rose-100 border border-rose-300 text-red-900 rounded-lg font-semibold hover:bg-rose-200 transition"
+          >
+            Next ▶
+          </button>
         </div>
 
         {loading && (
