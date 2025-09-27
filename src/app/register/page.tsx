@@ -47,11 +47,19 @@ export default function RegisterPatient() {
     setLoading(false);
   };
 
-  // Optionally: Generate Patient ID
-  const generateId = () => {
-    const newId = "SNG-" + Math.random().toString(36).substring(2, 8).toUpperCase();
-    setFormData((prev) => ({ ...prev, patientId: newId }));
-  };
+    // Optionally: Generate Patient ID
+const generateId = () => {
+  const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const digits = "0123456789";
+
+  const letter = letters[Math.floor(Math.random() * letters.length)];
+  const numberPart = Array.from({ length: 3 }, () => digits[Math.floor(Math.random() * 10)]).join("");
+
+  const pos = Math.floor(Math.random() * 4);
+  const id = numberPart.slice(0, pos) + letter + numberPart.slice(pos);
+
+  setFormData(prev => ({ ...prev, patientId: id }));
+};
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-black via-red-950 to-black flex items-center justify-center py-8 px-2 sm:px-4">
