@@ -7,6 +7,7 @@ type TestData = {
   patientId: string;
   malaria?: string;
   genotype?: string;
+  bloodGroup?: string;
   dateTaken: string;
 };
 
@@ -23,6 +24,7 @@ export default function TestAndSearch() {
     patientId: "",
     malaria: "",
     genotype: "",
+    bloodGroup: "",
   });
   const [patientId, setPatientId] = useState("");
   const [patient, setPatient] = useState<PatientData | null>(null);
@@ -74,12 +76,13 @@ export default function TestAndSearch() {
         patientId: formData.patientId.trim(),
         malaria: formData.malaria || null,
         genotype: formData.genotype || null,
+        bloodGroup: formData.bloodGroup || null,
         dateTaken: new Date().toISOString(),
       });
 
       setMessage({ type: "success", text: "✅ Test submitted successfully!" });
       setPatientId(formData.patientId.trim()); // Prefill search input
-      setFormData({ patientId: "", malaria: "", genotype: "" });
+      setFormData({ patientId: "", malaria: "", genotype: "", bloodGroup: "" });
     } catch (err) {
       console.error(err);
       setMessage({ type: "error", text: "❌ Failed to submit test." });
@@ -193,6 +196,22 @@ export default function TestAndSearch() {
                 <option value="SC">SC</option>
                 <option value="CC">CC</option>
               </select>
+              <select
+                name="bloodGroup"
+                value={formData.bloodGroup}
+                onChange={handleChange}
+                className="w-full p-3 border rounded-lg bg-rose-50 border-rose-200 focus:ring-2 focus:ring-red-400 text-black font-bold"
+              >
+                <option value="">Select Blood Group (Optional)</option>
+                <option value="A+">A+</option>
+                <option value="A-">A-</option>
+                <option value="B+">B+</option>
+                <option value="B-">B-</option>
+                <option value="AB+">AB+</option>
+                <option value="AB-">AB-</option>
+                <option value="O+">O+</option>
+                <option value="O-">O-</option>
+              </select>
               <button
                 type="submit"
                 disabled={submitting}
@@ -265,6 +284,9 @@ export default function TestAndSearch() {
                       </span>
                       <span className="font-semibold text-gray-700">
                         Genotype: <span className="text-red-900">{rec.genotype || "N/A"}</span>
+                      </span>
+                      <span className="font-semibold text-gray-700">
+                        Blood Group: <span className="text-red-900">{rec.bloodGroup || "N/A"}</span>
                       </span>
                       <span className="font-semibold text-gray-700">
                         Date Taken:{" "}
