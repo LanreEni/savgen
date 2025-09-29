@@ -62,33 +62,50 @@ export default function TestAndSearch() {
   };
 
   // Submit test result
-  const handleSubmitTest = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.patientId.trim()) {
-      setMessage({ type: "error", text: "⚠️ Patient ID is required." });
+  // Submit test result
+const handleSubmitTest = async (e: React.FormEvent) => {
+  e.preventDefault();
+  if (!formData.patientId.trim()) {
+    setMessage({ type: "error", text: "⚠️ Patient ID is required." });
+    return;
+  }
+  setSubmitting(true);
+  setMessage(null);
+
+  try {
+    // 🔍 Check if patient exists in patients collection
+    const patientQ = query(
+      collection(db, "patients"),
+      where("patientId", "==", formData.patientId.trim())
+    );
+    const patientSnap = await getDocs(patientQ);
+
+    if (patientSnap.empty) {
+      // ❌ No patient with this ID
+      setMessage({ type: "error", text: "❌ Patient ID not available." });
+      setSubmitting(false);
       return;
     }
-    setSubmitting(true);
-    setMessage(null);
 
-    try {
-      await addDoc(collection(db, "tests"), {
-        patientId: formData.patientId.trim(),
-        malaria: formData.malaria || null,
-        genotype: formData.genotype || null,
-        bloodGroup: formData.bloodGroup || null,
-        dateTaken: new Date().toISOString(),
-      });
+    // ✅ Patient exists → Add test record
+    await addDoc(collection(db, "tests"), {
+      patientId: formData.patientId.trim(),
+      malaria: formData.malaria || null,
+      genotype: formData.genotype || null,
+      bloodGroup: formData.bloodGroup || null,
+      dateTaken: new Date().toISOString(),
+    });
 
-      setMessage({ type: "success", text: "✅ Test submitted successfully!" });
-      setPatientId(formData.patientId.trim()); // Prefill search input
-      setFormData({ patientId: "", malaria: "", genotype: "", bloodGroup: "" });
-    } catch (err) {
-      console.error(err);
-      setMessage({ type: "error", text: "❌ Failed to submit test." });
-    }
-    setSubmitting(false);
-  };
+    setMessage({ type: "success", text: "✅ Test submitted successfully!" });
+    setPatientId(formData.patientId.trim()); // Prefill search input
+    setFormData({ patientId: "", malaria: "", genotype: "", bloodGroup: "" });
+  } catch (err) {
+    console.error(err);
+    setMessage({ type: "error", text: "❌ Failed to submit test." });
+  }
+
+  setSubmitting(false);
+};
 
   // Search patient records
   const handleSearch = async (e: React.FormEvent) => {
