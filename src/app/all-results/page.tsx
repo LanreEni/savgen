@@ -5,13 +5,8 @@ import {
   collection,
   getDocs,
   query,
-  where,
   orderBy,
-  startAfter,
-  startAt,
-  limit,
-  QueryDocumentSnapshot,
-  DocumentData,
+  where,
 } from "firebase/firestore";
 
 type TestData = {
@@ -30,94 +25,64 @@ type PatientData = {
 };
 
 export default function AllResults() {
-  const [pageResults, setPageResults] = useState<TestData[]>([]);
+  const [allResults, setAllResults] = useState<TestData[]>([]);
   const [patients, setPatients] = useState<Record<string, PatientData>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [searchField, setSearchField] = useState<"patientId" | "name" | "genotype">("patientId");
-  const [pageCursors, setPageCursors] = useState<QueryDocumentSnapshot<DocumentData>[]>([]);
-  const [currentPage, setCurrentPage] = useState(0);
-  const pageSize = 100;
 
-  const fetchPage = async (pageIndex: number) => {
+  const fetchAllResults = async () => {
     setLoading(true);
     setError("");
+
     try {
-      let q;
-
-      if (pageIndex === 0) {
-        q = query(collection(db, "tests"), orderBy("dateTaken"), limit(pageSize));
-      } else {
-        const cursor = pageCursors[pageIndex - 1];
-        q = query(collection(db, "tests"), orderBy("dateTaken"), startAfter(cursor), limit(pageSize));
-      }
-
-      const snap = await getDocs(q);
-
+      // Get all test results
+      const snap = await getDocs(query(collection(db, "tests"), orderBy("dateTaken")));
       if (!snap.empty) {
-        const batchResults = snap.docs.map((doc) => doc.data() as TestData);
-        setPageResults(batchResults);
+        const results = snap.docs.map((doc) => doc.data() as TestData);
+        setAllResults(results);
 
-        // Add last doc of this page to cursors if going forward
-        if (!pageCursors[pageIndex]) {
-          setPageCursors((prev) => {
-            const newCursors = [...prev];
-            newCursors[pageIndex] = snap.docs[snap.docs.length - 1];
-            return newCursors;
-          });
-        }
-
-        // Fetch patients for this batch
-        const uniqueIds = Array.from(new Set(batchResults.map((r) => r.patientId)));
+        // Fetch all patients referenced in results
+        const uniqueIds = Array.from(new Set(results.map((r) => r.patientId)));
         const patientMap: Record<string, PatientData> = {};
+
         for (const pid of uniqueIds) {
-          if (!patients[pid]) {
-            const patientSnap = await getDocs(query(collection(db, "patients"), where("patientId", "==", pid)));
-            if (!patientSnap.empty) {
-              patientMap[pid] = patientSnap.docs[0].data() as PatientData;
-            }
+          const patientSnap = await getDocs(query(collection(db, "patients"), where("patientId", "==", pid)));
+          if (!patientSnap.empty) {
+            patientMap[pid] = patientSnap.docs[0].data() as PatientData;
           }
         }
-        setPatients((prev) => ({ ...prev, ...patientMap }));
+
+        setPatients(patientMap);
       } else {
-        setError("No results for this page.");
+        setError("No results found in database.");
       }
     } catch (err) {
       console.error(err);
       setError("❌ Failed to fetch results.");
     }
-    setLoading(false);
+
+    // Fake instant loading ribbon (hide spinner after 10ms)
+    setTimeout(() => setLoading(false), 10);
   };
 
   useEffect(() => {
-    fetchPage(0);
-    setCurrentPage(0);
+    fetchAllResults();
   }, []);
 
-  const goNext = () => {
-    fetchPage(currentPage + 1);
-    setCurrentPage((p) => p + 1);
-  };
-
-  const goPrev = () => {
-    if (currentPage > 0) {
-      fetchPage(currentPage - 1);
-      setCurrentPage((p) => p - 1);
-    }
-  };
-
+  // Instant search on client
   const filteredResults = useMemo(() => {
-  return pageResults.filter((rec) => {
-    const patient = patients[rec.patientId];
-    if (!searchTerm.trim()) return true;
-    const term = searchTerm.toLowerCase();
-    if (searchField === "patientId") return rec.patientId?.toLowerCase().includes(term);
-    if (searchField === "name") return patient?.name?.toLowerCase().includes(term);
-    if (searchField === "genotype") return (rec.genotype ?? "").toLowerCase().includes(term);
-    return true;
-  });
-}, [pageResults, patients, searchTerm, searchField]);
+    return allResults.filter((rec) => {
+      const patient = patients[rec.patientId];
+      if (!searchTerm.trim()) return true;
+      const term = searchTerm.toLowerCase();
+      if (searchField === "patientId") return rec.patientId?.toLowerCase().includes(term);
+      if (searchField === "name") return patient?.name?.toLowerCase().includes(term);
+      if (searchField === "genotype") return (rec.genotype ?? "").toLowerCase().includes(term);
+      return true;
+    });
+  }, [allResults, patients, searchTerm, searchField]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-black via-red-950 to-black flex flex-col items-center py-8 px-2 sm:px-4">
@@ -142,25 +107,6 @@ export default function AllResults() {
             <option value="name">Name</option>
             <option value="genotype">Genotype</option>
           </select>
-        </div>
-
-        {/* Pagination Buttons */}
-        <div className="flex justify-between mb-4">
-          <button
-            onClick={goPrev}
-            disabled={currentPage === 0 || loading}
-            className="px-4 py-2 bg-rose-100 border border-rose-300 text-red-900 rounded-lg font-semibold hover:bg-rose-200 transition"
-          >
-            ◀ Previous
-          </button>
-          <span className="text-red-900 font-bold">Page {currentPage + 1}</span>
-          <button
-            onClick={goNext}
-            disabled={loading || pageResults.length < pageSize}
-            className="px-4 py-2 bg-rose-100 border border-rose-300 text-red-900 rounded-lg font-semibold hover:bg-rose-200 transition"
-          >
-            Next ▶
-          </button>
         </div>
 
         {loading && (
@@ -212,7 +158,9 @@ export default function AllResults() {
                       <td className="border border-rose-300 px-2 py-1">{patient?.gender || "N/A"}</td>
                       <td className="border border-rose-300 px-2 py-1">{rec.malaria}</td>
                       <td className="border border-rose-300 px-2 py-1">{rec.genotype}</td>
-                      <td className="border border-rose-300 px-2 py-1">{rec.dateTaken ? new Date(rec.dateTaken).toLocaleDateString() : ""}</td>
+                      <td className="border border-rose-300 px-2 py-1">
+                        {rec.dateTaken ? new Date(rec.dateTaken).toLocaleDateString() : ""}
+                      </td>
                     </tr>
                   );
                 })}
