@@ -1,0 +1,77 @@
+"use client";
+import { useEffect, useState } from "react";
+import { db } from "../../lib/firebase";
+import { collection, getDocs } from "firebase/firestore";
+
+type PatientData = {
+  patientId: string;
+  name: string;
+  dob: string;
+  gender: string;
+  phone?: string;
+};
+
+export default function AllPatients() {
+  const [patients, setPatients] = useState<PatientData[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchPatients = async () => {
+      try {
+        const snap = await getDocs(collection(db, "patients"));
+        const allPatients = snap.docs.map((doc) => doc.data() as PatientData);
+        setPatients(allPatients);
+      } catch (err) {
+        console.error("Error fetching patients:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchPatients();
+  }, []);
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-black via-red-950 to-black p-6 sm:p-12">
+      <div className="max-w-6xl mx-auto bg-white/95 p-6 sm:p-8 rounded-2xl shadow-xl border border-red-200">
+        <h2 className="text-2xl font-bold text-red-900 mb-6 text-center">
+          📋 All Registered Patients
+        </h2>
+
+        {loading ? (
+          <p className="text-center text-gray-600">Loading patients...</p>
+        ) : patients.length === 0 ? (
+          <p className="text-center text-red-700 font-semibold">
+            ⚠️ No patients found.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse border border-rose-300">
+              <thead>
+                <tr className="bg-rose-100 text-red-900">
+                  <th className="border border-rose-300 px-4 py-2">Patient ID</th>
+                  <th className="border border-rose-300 px-4 py-2">Name</th>
+                  <th className="border border-rose-300 px-4 py-2">DOB</th>
+                  <th className="border border-rose-300 px-4 py-2">Gender</th>
+                  <th className="border border-rose-300 px-4 py-2">Phone</th>
+                </tr>
+              </thead>
+              <tbody>
+                {patients.map((p, idx) => (
+                  <tr key={idx} className="hover:bg-rose-50">
+                    <td className="border border-rose-300 px-4 py-2">{p.patientId}</td>
+                    <td className="border border-rose-300 px-4 py-2">{p.name}</td>
+                    <td className="border border-rose-300 px-4 py-2">
+                      {p.dob ? new Date(p.dob).toLocaleDateString() : "N/A"}
+                    </td>
+                    <td className="border border-rose-300 px-4 py-2">{p.gender}</td>
+                    <td className="border border-rose-300 px-4 py-2">{p.phone || "N/A"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
