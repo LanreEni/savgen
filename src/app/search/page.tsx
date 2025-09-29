@@ -7,6 +7,7 @@ type TestData = {
   patientId: string;
   malaria: string;
   genotype: string;
+  bloodGroup?: string; // ✅ Added
   dateTaken: string;
 };
 
@@ -174,10 +175,13 @@ export default function Search() {
                     className="flex flex-col md:flex-row md:justify-between md:items-center border-b border-rose-200 pb-2 last:border-b-0"
                   >
                     <span className="font-semibold text-gray-700">
-                      Malaria: <span className="text-red-900">{rec.malaria}</span>
+                      Malaria: <span className="text-red-900">{rec.malaria || "N/A"}</span>
                     </span>
                     <span className="font-semibold text-gray-700">
-                      Genotype: <span className="text-red-900">{rec.genotype}</span>
+                      Genotype: <span className="text-red-900">{rec.genotype || "N/A"}</span>
+                    </span>
+                    <span className="font-semibold text-gray-700">
+                      Blood Group: <span className="text-red-900">{rec.bloodGroup || "N/A"}</span>
                     </span>
                     <span className="font-semibold text-gray-700">
                       Date Taken:{" "}
