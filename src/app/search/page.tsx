@@ -48,37 +48,59 @@ export default function Search() {
   };
 
   const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setRecords([]);
-    setError("");
-    if (!patientId.trim()) {
-      setError("❌ Please enter a Patient ID");
+  e.preventDefault();
+  setRecords([]);
+  setError("");
+  if (!patientId.trim()) {
+    setError("❌ Please enter a Patient ID");
+    return;
+  }
+  setLoading(true);
+
+  try {
+    // 🔍 First check if patient exists
+    const patientQ = query(
+      collection(db, "patients"),
+      where("patientId", "==", patientId.trim())
+    );
+    const patientSnap = await getDocs(patientQ);
+
+    if (patientSnap.empty) {
+      // ❌ Patient not found
+      setError("❌ Patient ID not available.");
+      setPatient(null);
+      setRecords([]);
+      setLoading(false);
       return;
     }
-    setLoading(true);
-    try {
-      const q = query(collection(db, "tests"), where("patientId", "==", patientId.trim()));
-      const querySnapshot = await getDocs(q);
-      if (querySnapshot.empty) {
-        setError("⚠️ No record found for this Patient ID.");
-        setRecords([]);
-        setPatient(null);
-      } else {
-        const allRecords = querySnapshot.docs.map(doc => doc.data() as TestData);
-        setRecords(allRecords);
-        const patientQ = query(collection(db, "patients"), where("patientId", "==", patientId.trim()));
-        const patientSnap = await getDocs(patientQ);
-        if (!patientSnap.empty) {
-          setPatient(patientSnap.docs[0].data() as PatientData);
-        } else {
-          setPatient(null);
-        }
-      }
-    } catch (err) {
-      setError("❌ Error searching records.");
+
+    // ✅ Patient exists → save patient details
+    setPatient(patientSnap.docs[0].data() as PatientData);
+
+    // 🔍 Now fetch test records for this patient
+    const testQ = query(
+      collection(db, "tests"),
+      where("patientId", "==", patientId.trim())
+    );
+    const testSnap = await getDocs(testQ);
+
+    if (testSnap.empty) {
+      // No test records yet, but patient is valid
       setRecords([]);
-      console.error(err);
+      setError("⚠️ No test records found for this Patient ID.");
+    } else {
+      const allRecords = testSnap.docs.map(doc => doc.data() as TestData);
+      setRecords(allRecords);
     }
+  } catch (err) {
+    console.error(err);
+    setError("❌ Error searching records.");
+    setPatient(null);
+    setRecords([]);
+  }
+
+  setLoading(false);
+};
     setLoading(false);
   };
 
