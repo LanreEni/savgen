@@ -203,13 +203,6 @@ export default function AllResults() {
             <option value="name">Name</option>
             <option value="genotype">Genotype</option>
           </select>
-
-          <button onClick={handleExportExcel} className="bg-green-600 text-white px-3 py-2 rounded-lg">
-            Export Excel
-          </button>
-          <button onClick={handleExportPDF} className="bg-blue-600 text-white px-3 py-2 rounded-lg">
-            Export PDF
-          </button>
         </div>
 
         {/* Table */}
