@@ -7,13 +7,14 @@ import {
   query,
   orderBy,
   where,
+  deleteDoc,
+  doc,
 } from "firebase/firestore";
 
 type TestData = {
   patientId: string;
   malaria: string;
   genotype: string;
-  bloodGroup?: string; // ✅ Added
   dateTaken: string;
 };
 
@@ -23,7 +24,10 @@ type PatientData = {
   dob: string;
   gender: string;
   phone?: string;
+  bloodGroup?: string;
 };
+
+const ACCESS_KEY = "admin25"; // 🔑 change this to your real access key
 
 export default function AllResults() {
   const [allResults, setAllResults] = useState<TestData[]>([]);
@@ -33,6 +37,9 @@ export default function AllResults() {
   const [searchTerm, setSearchTerm] = useState("");
   const [searchField, setSearchField] = useState<"patientId" | "name" | "genotype">("patientId");
 
+  const [accessGranted, setAccessGranted] = useState(false);
+  const [keyInput, setKeyInput] = useState("");
+
   const fetchAllResults = async () => {
     setLoading(true);
     setError("");
@@ -40,7 +47,7 @@ export default function AllResults() {
     try {
       const snap = await getDocs(query(collection(db, "tests"), orderBy("dateTaken")));
       if (!snap.empty) {
-        const results = snap.docs.map((doc) => doc.data() as TestData);
+        const results = snap.docs.map((doc) => ({ ...doc.data(), id: doc.id })) as any[];
         setAllResults(results);
 
         const uniqueIds = Array.from(new Set(results.map((r) => r.patientId)));
@@ -69,6 +76,17 @@ export default function AllResults() {
     fetchAllResults();
   }, []);
 
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this record?")) return;
+    try {
+      await deleteDoc(doc(db, "tests", id));
+      setAllResults((prev) => prev.filter((rec: any) => rec.id !== id));
+    } catch (err) {
+      console.error("Delete failed:", err);
+      alert("❌ Failed to delete record");
+    }
+  };
+
   const filteredResults = useMemo(() => {
     return allResults.filter((rec) => {
       const patient = patients[rec.patientId];
@@ -81,9 +99,40 @@ export default function AllResults() {
     });
   }, [allResults, patients, searchTerm, searchField]);
 
+  // 🔐 Modal for access key
+  if (!accessGranted) {
+    return (
+      <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+        <div className="bg-white rounded-xl p-6 shadow-lg w-80">
+          <h2 className="text-xl font-bold mb-4 text-center text-red-900">Enter Access Key</h2>
+          <input
+            type="password"
+            value={keyInput}
+            onChange={(e) => setKeyInput(e.target.value)}
+            placeholder="Access Key"
+            className="w-full p-2 border rounded-lg mb-4"
+          />
+          <button
+            onClick={() => {
+              if (keyInput === ACCESS_KEY) {
+                setAccessGranted(true);
+                sessionStorage.setItem("accessGranted", "true");
+              } else {
+                alert("❌ Invalid Key");
+              }
+            }}
+            className="w-full bg-red-700 text-white py-2 rounded-lg font-bold hover:bg-red-800"
+          >
+            Submit
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-black via-red-950 to-black flex flex-col items-center py-8 px-2 sm:px-4">
-      <section className="w-full max-w-5xl bg-white/95 p-6 sm:p-8 rounded-2xl shadow-xl border border-red-200">
+      <section className="w-full max-w-6xl bg-white/95 p-6 sm:p-8 rounded-2xl shadow-xl border border-red-200">
         <h2 className="text-2xl font-bold text-red-900 text-center mb-6">All Test Results</h2>
 
         {/* Search Controls */}
@@ -128,14 +177,15 @@ export default function AllResults() {
                   <th className="border border-rose-300 px-4 py-2">Name</th>
                   <th className="border border-rose-300 px-4 py-2">Age</th>
                   <th className="border border-rose-300 px-4 py-2">Gender</th>
-                  <th className="border border-rose-300 px-4 py-2">Blood Group</th> {/* ✅ from rec now */}
+                  <th className="border border-rose-300 px-4 py-2">Blood Group</th>
                   <th className="border border-rose-300 px-4 py-2">Malaria</th>
                   <th className="border border-rose-300 px-4 py-2">Genotype</th>
                   <th className="border border-rose-300 px-4 py-2">Date Taken</th>
+                  <th className="border border-rose-300 px-4 py-2">Action</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredResults.map((rec, idx) => {
+                {filteredResults.map((rec: any, idx) => {
                   const patient = patients[rec.patientId];
                   let age = "N/A";
                   if (patient) {
@@ -154,11 +204,19 @@ export default function AllResults() {
                       <td className="border border-rose-300 px-2 py-1">{patient?.name || "N/A"}</td>
                       <td className="border border-rose-300 px-2 py-1">{age}</td>
                       <td className="border border-rose-300 px-2 py-1">{patient?.gender || "N/A"}</td>
-                      <td className="border border-rose-300 px-2 py-1">{rec.bloodGroup || "N/A"}</td> {/* ✅ FIXED */}
+                      <td className="border border-rose-300 px-2 py-1">{patient?.bloodGroup || ""}</td> {/* ✅ Empty if none */}
                       <td className="border border-rose-300 px-2 py-1">{rec.malaria}</td>
                       <td className="border border-rose-300 px-2 py-1">{rec.genotype}</td>
                       <td className="border border-rose-300 px-2 py-1">
                         {rec.dateTaken ? new Date(rec.dateTaken).toLocaleDateString() : ""}
+                      </td>
+                      <td className="border border-rose-300 px-2 py-1">
+                        <button
+                          onClick={() => handleDelete(rec.id)}
+                          className="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700"
+                        >
+                          Delete
+                        </button>
                       </td>
                     </tr>
                   );
