@@ -22,6 +22,7 @@ type PatientData = {
   dob: string;
   gender: string;
   phone?: string;
+  bloodGroup?: string; // ✅ Added
 };
 
 export default function AllResults() {
@@ -37,13 +38,11 @@ export default function AllResults() {
     setError("");
 
     try {
-      // Get all test results
       const snap = await getDocs(query(collection(db, "tests"), orderBy("dateTaken")));
       if (!snap.empty) {
         const results = snap.docs.map((doc) => doc.data() as TestData);
         setAllResults(results);
 
-        // Fetch all patients referenced in results
         const uniqueIds = Array.from(new Set(results.map((r) => r.patientId)));
         const patientMap: Record<string, PatientData> = {};
 
@@ -63,7 +62,6 @@ export default function AllResults() {
       setError("❌ Failed to fetch results.");
     }
 
-    // Fake instant loading ribbon (hide spinner after 10ms)
     setTimeout(() => setLoading(false), 10);
   };
 
@@ -71,7 +69,6 @@ export default function AllResults() {
     fetchAllResults();
   }, []);
 
-  // Instant search on client
   const filteredResults = useMemo(() => {
     return allResults.filter((rec) => {
       const patient = patients[rec.patientId];
@@ -131,6 +128,7 @@ export default function AllResults() {
                   <th className="border border-rose-300 px-4 py-2">Name</th>
                   <th className="border border-rose-300 px-4 py-2">Age</th>
                   <th className="border border-rose-300 px-4 py-2">Gender</th>
+                  <th className="border border-rose-300 px-4 py-2">Blood Group</th> {/* ✅ Added */}
                   <th className="border border-rose-300 px-4 py-2">Malaria</th>
                   <th className="border border-rose-300 px-4 py-2">Genotype</th>
                   <th className="border border-rose-300 px-4 py-2">Date Taken</th>
@@ -156,6 +154,7 @@ export default function AllResults() {
                       <td className="border border-rose-300 px-2 py-1">{patient?.name || "N/A"}</td>
                       <td className="border border-rose-300 px-2 py-1">{age}</td>
                       <td className="border border-rose-300 px-2 py-1">{patient?.gender || "N/A"}</td>
+                      <td className="border border-rose-300 px-2 py-1">{patient?.bloodGroup || "N/A"}</td> {/* ✅ Added */}
                       <td className="border border-rose-300 px-2 py-1">{rec.malaria}</td>
                       <td className="border border-rose-300 px-2 py-1">{rec.genotype}</td>
                       <td className="border border-rose-300 px-2 py-1">
