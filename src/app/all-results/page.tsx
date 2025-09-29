@@ -13,6 +13,7 @@ type TestData = {
   patientId: string;
   malaria: string;
   genotype: string;
+  bloodGroup?: string; // ✅ Added
   dateTaken: string;
 };
 
@@ -22,7 +23,6 @@ type PatientData = {
   dob: string;
   gender: string;
   phone?: string;
-  bloodGroup?: string; // ✅ Added
 };
 
 export default function AllResults() {
@@ -128,7 +128,7 @@ export default function AllResults() {
                   <th className="border border-rose-300 px-4 py-2">Name</th>
                   <th className="border border-rose-300 px-4 py-2">Age</th>
                   <th className="border border-rose-300 px-4 py-2">Gender</th>
-                  <th className="border border-rose-300 px-4 py-2">Blood Group</th> {/* ✅ Added */}
+                  <th className="border border-rose-300 px-4 py-2">Blood Group</th> {/* ✅ from rec now */}
                   <th className="border border-rose-300 px-4 py-2">Malaria</th>
                   <th className="border border-rose-300 px-4 py-2">Genotype</th>
                   <th className="border border-rose-300 px-4 py-2">Date Taken</th>
@@ -154,7 +154,7 @@ export default function AllResults() {
                       <td className="border border-rose-300 px-2 py-1">{patient?.name || "N/A"}</td>
                       <td className="border border-rose-300 px-2 py-1">{age}</td>
                       <td className="border border-rose-300 px-2 py-1">{patient?.gender || "N/A"}</td>
-                      <td className="border border-rose-300 px-2 py-1">{patient?.bloodGroup || "N/A"}</td> {/* ✅ Added */}
+                      <td className="border border-rose-300 px-2 py-1">{rec.bloodGroup || "N/A"}</td> {/* ✅ FIXED */}
                       <td className="border border-rose-300 px-2 py-1">{rec.malaria}</td>
                       <td className="border border-rose-300 px-2 py-1">{rec.genotype}</td>
                       <td className="border border-rose-300 px-2 py-1">
