@@ -154,14 +154,20 @@ export default function Search() {
             </button>
           </form>
 
-          <div className="flex justify-center mb-8">
-            <a
-              href="/all-results"
-              className="inline-block px-6 py-2 bg-rose-100 border border-rose-300 text-red-900 font-semibold rounded-lg shadow hover:bg-rose-200 transition"
-            >
-              📋 View All Results
-            </a>
-          </div>
+         <div className="flex justify-center gap-4 mb-8">
+  <a
+    href="/all-results"
+    className="inline-block px-6 py-2 bg-rose-100 border border-rose-300 text-red-900 font-semibold rounded-lg shadow hover:bg-rose-200 transition"
+  >
+    📋 View All Results
+  </a>
+  <a
+    href="/all-patients"
+    className="inline-block px-6 py-2 bg-rose-100 border border-rose-300 text-red-900 font-semibold rounded-lg shadow hover:bg-rose-200 transition"
+  >
+    👥 View All Patients
+  </a>
+</div>
 
           {error && (
             <p className="text-red-700 font-semibold text-center mb-4">{error}</p>
