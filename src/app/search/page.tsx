@@ -7,7 +7,7 @@ type TestData = {
   patientId: string;
   malaria: string;
   genotype: string;
-  bloodGroup?: string; // ✅ Added
+  bloodGroup?: string;
   dateTaken: string;
 };
 
@@ -48,59 +48,57 @@ export default function Search() {
   };
 
   const handleSearch = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setRecords([]);
-  setError("");
-  if (!patientId.trim()) {
-    setError("❌ Please enter a Patient ID");
-    return;
-  }
-  setLoading(true);
+    e.preventDefault();
+    setRecords([]);
+    setError("");
 
-  try {
-    // 🔍 First check if patient exists
-    const patientQ = query(
-      collection(db, "patients"),
-      where("patientId", "==", patientId.trim())
-    );
-    const patientSnap = await getDocs(patientQ);
-
-    if (patientSnap.empty) {
-      // ❌ Patient not found
-      setError("❌ Patient ID not available.");
-      setPatient(null);
-      setRecords([]);
-      setLoading(false);
+    if (!patientId.trim()) {
+      setError("❌ Please enter a Patient ID");
       return;
     }
 
-    // ✅ Patient exists → save patient details
-    setPatient(patientSnap.docs[0].data() as PatientData);
+    setLoading(true);
 
-    // 🔍 Now fetch test records for this patient
-    const testQ = query(
-      collection(db, "tests"),
-      where("patientId", "==", patientId.trim())
-    );
-    const testSnap = await getDocs(testQ);
+    try {
+      // 🔍 First check if patient exists
+      const patientQ = query(
+        collection(db, "patients"),
+        where("patientId", "==", patientId.trim())
+      );
+      const patientSnap = await getDocs(patientQ);
 
-    if (testSnap.empty) {
-      // No test records yet, but patient is valid
+      if (patientSnap.empty) {
+        setError("❌ Patient ID not available.");
+        setPatient(null);
+        setRecords([]);
+        setLoading(false);
+        return;
+      }
+
+      // ✅ Patient exists → save details
+      setPatient(patientSnap.docs[0].data() as PatientData);
+
+      // 🔍 Fetch test records
+      const testQ = query(
+        collection(db, "tests"),
+        where("patientId", "==", patientId.trim())
+      );
+      const testSnap = await getDocs(testQ);
+
+      if (testSnap.empty) {
+        setRecords([]);
+        setError("⚠️ No test records found for this Patient ID.");
+      } else {
+        const allRecords = testSnap.docs.map((doc) => doc.data() as TestData);
+        setRecords(allRecords);
+      }
+    } catch (err) {
+      console.error(err);
+      setError("❌ Error searching records.");
+      setPatient(null);
       setRecords([]);
-      setError("⚠️ No test records found for this Patient ID.");
-    } else {
-      const allRecords = testSnap.docs.map(doc => doc.data() as TestData);
-      setRecords(allRecords);
     }
-  } catch (err) {
-    console.error(err);
-    setError("❌ Error searching records.");
-    setPatient(null);
-    setRecords([]);
-  }
 
-  setLoading(false);
-};
     setLoading(false);
   };
 
@@ -110,7 +108,9 @@ export default function Search() {
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
           <div className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-md border border-red-200">
-            <h2 className="text-xl font-bold text-red-900 mb-4 text-center">Enter Access Key</h2>
+            <h2 className="text-xl font-bold text-red-900 mb-4 text-center">
+              Enter Access Key
+            </h2>
             <form onSubmit={handleKeySubmit} className="flex flex-col gap-4">
               <input
                 type="password"
@@ -137,7 +137,10 @@ export default function Search() {
             Search Patient Records
           </h2>
 
-          <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-3 mb-6">
+          <form
+            onSubmit={handleSearch}
+            className="flex flex-col sm:flex-row gap-3 mb-6"
+          >
             <input
               type="text"
               value={patientId}
@@ -154,20 +157,21 @@ export default function Search() {
             </button>
           </form>
 
-         <div className="flex justify-center gap-4 mb-8">
-  <a
-    href="/all-results"
-    className="inline-block px-6 py-2 bg-rose-100 border border-rose-300 text-red-900 font-semibold rounded-lg shadow hover:bg-rose-200 transition"
-  >
-    📋 View All Results
-  </a>
-  <a
-    href="/all-patients"
-    className="inline-block px-6 py-2 bg-rose-100 border border-rose-300 text-red-900 font-semibold rounded-lg shadow hover:bg-rose-200 transition"
-  >
-    👥 View All Patients
-  </a>
-</div>
+          {/* Navigation Buttons */}
+          <div className="flex justify-center gap-4 mb-8">
+            <a
+              href="/all-results"
+              className="inline-block px-6 py-2 bg-rose-100 border border-rose-300 text-red-900 font-semibold rounded-lg shadow hover:bg-rose-200 transition"
+            >
+              📋 View All Results
+            </a>
+            <a
+              href="/all-patients"
+              className="inline-block px-6 py-2 bg-rose-100 border border-rose-300 text-red-900 font-semibold rounded-lg shadow hover:bg-rose-200 transition"
+            >
+              👥 View All Patients
+            </a>
+          </div>
 
           {error && (
             <p className="text-red-700 font-semibold text-center mb-4">{error}</p>
@@ -186,12 +190,17 @@ export default function Search() {
               </h3>
               {patient && (
                 <h4 className="text-lg font-semibold text-gray-800 mb-2">
-                  Name: {patient.name} | Age: {(() => {
+                  Name: {patient.name} | Age:{" "}
+                  {(() => {
                     const dob = new Date(patient.dob);
                     const today = new Date();
                     let age = today.getFullYear() - dob.getFullYear();
                     const m = today.getMonth() - dob.getMonth();
-                    if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+                    if (
+                      m < 0 ||
+                      (m === 0 && today.getDate() < dob.getDate())
+                    )
+                      age--;
                     return age;
                   })()}
                 </h4>
@@ -203,18 +212,29 @@ export default function Search() {
                     className="flex flex-col md:flex-row md:justify-between md:items-center border-b border-rose-200 pb-2 last:border-b-0"
                   >
                     <span className="font-semibold text-gray-700">
-                      Malaria: <span className="text-red-900">{rec.malaria || "N/A"}</span>
+                      Malaria:{" "}
+                      <span className="text-red-900">
+                        {rec.malaria || "N/A"}
+                      </span>
                     </span>
                     <span className="font-semibold text-gray-700">
-                      Genotype: <span className="text-red-900">{rec.genotype || "N/A"}</span>
+                      Genotype:{" "}
+                      <span className="text-red-900">
+                        {rec.genotype || "N/A"}
+                      </span>
                     </span>
                     <span className="font-semibold text-gray-700">
-                      Blood Group: <span className="text-red-900">{rec.bloodGroup || "N/A"}</span>
+                      Blood Group:{" "}
+                      <span className="text-red-900">
+                        {rec.bloodGroup || "N/A"}
+                      </span>
                     </span>
                     <span className="font-semibold text-gray-700">
                       Date Taken:{" "}
                       <span className="text-red-900">
-                        {rec.dateTaken ? new Date(rec.dateTaken).toLocaleDateString() : ""}
+                        {rec.dateTaken
+                          ? new Date(rec.dateTaken).toLocaleDateString()
+                          : ""}
                       </span>
                     </span>
                   </li>
