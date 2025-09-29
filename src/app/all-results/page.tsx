@@ -12,9 +12,6 @@ import {
   updateDoc,
   setDoc,
 } from "firebase/firestore";
-import * as XLSX from "xlsx";
-import jsPDF from "jspdf";
-import "jspdf-autotable";
 
 type TestData = {
   id: string;
@@ -138,53 +135,6 @@ export default function AllResults() {
       console.error(err);
       alert("❌ Failed to update record");
     }
-  };
-
-  const handleExportExcel = () => {
-    const data = filteredResults.map((rec) => {
-      const patient = patients[rec.patientId] || {};
-      return {
-        "Patient ID": rec.patientId,
-        Name: patient?.name || "N/A",
-        DOB: patient?.dob || "N/A",
-        Age: patient?.dob
-          ? new Date().getFullYear() - new Date(patient.dob).getFullYear()
-          : "N/A",
-        Gender: patient?.gender || "N/A",
-        Phone: patient?.phone || "",
-        "Blood Group": patient?.bloodGroup || rec.bloodGroup || "",
-        Malaria: rec.malaria,
-        Genotype: rec.genotype,
-        "Date Taken": rec.dateTaken ? new Date(rec.dateTaken).toLocaleDateString() : "",
-      };
-    });
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Results");
-    XLSX.writeFile(wb, "TestResults.xlsx");
-  };
-
-  const handleExportPDF = () => {
-    const docPDF = new jsPDF();
-    const tableData = filteredResults.map((rec) => {
-      const patient = patients[rec.patientId] || {};
-      return [
-        rec.patientId,
-        patient?.name || "N/A",
-        patient?.dob || "",
-        patient?.gender || "N/A",
-        patient?.phone || "",
-        patient?.bloodGroup || rec.bloodGroup || "",
-        rec.malaria,
-        rec.genotype,
-        rec.dateTaken ? new Date(rec.dateTaken).toLocaleDateString() : "",
-      ];
-    });
-    (docPDF as any).autoTable({
-      head: [["Patient ID", "Name", "DOB", "Gender", "Phone", "Blood Group", "Malaria", "Genotype", "Date Taken"]],
-      body: tableData,
-    });
-    docPDF.save("TestResults.pdf");
   };
 
   const filteredResults = useMemo(() => {
