@@ -125,17 +125,27 @@ const usePatientModal = () => {
   const [showModal, setShowModal] = useState(false);
   const [allPatients, setAllPatients] = useState<PatientData[]>([]);
   const [loadingPatients, setLoadingPatients] = useState(false);
+  const [testPatientIds, setTestPatientIds] = useState<Set<string>>(new Set());
+  const [patientSearchTerm, setPatientSearchTerm] = useState("");
 
   const fetchAllPatients = useCallback(async () => {
     if (!showModal) return;
 
     setLoadingPatients(true);
     try {
+      // Fetch all patients
       const patientsSnap = await getDocs(collection(db, "patients"));
       const patientsData = patientsSnap.docs.map(
         (doc) => doc.data() as PatientData
       );
       setAllPatients(patientsData);
+
+      // Fetch all test patient IDs to determine who has tests
+      const testsSnap = await getDocs(collection(db, "tests"));
+      const testIds = new Set(
+        testsSnap.docs.map((d) => (d.data() as TestData).patientId)
+      );
+      setTestPatientIds(testIds);
     } catch (err) {
       console.error("Error fetching patients:", err);
     } finally {
@@ -147,11 +157,26 @@ const usePatientModal = () => {
     fetchAllPatients();
   }, [fetchAllPatients]);
 
+  const filteredPatients = useMemo(() => {
+    if (!patientSearchTerm.trim()) return allPatients;
+    
+    const term = patientSearchTerm.toLowerCase();
+    return allPatients.filter((patient) =>
+      patient.name?.toLowerCase().includes(term) ||
+      patient.patientId?.toLowerCase().includes(term) ||
+      patient.phone?.toLowerCase().includes(term)
+    );
+  }, [allPatients, patientSearchTerm]);
+
   return {
     showModal,
     setShowModal,
-    allPatients,
+    allPatients: filteredPatients,
     loadingPatients,
+    testPatientIds,
+    patientSearchTerm,
+    setPatientSearchTerm,
+    refetchPatients: fetchAllPatients,
   };
 };
 
@@ -375,17 +400,25 @@ const PatientsModal = ({
   onClose,
   patients,
   loading,
+  testPatientIds,
+  searchTerm,
+  setSearchTerm,
+  onDeletePatient,
 }: {
   show: boolean;
   onClose: () => void;
   patients: PatientData[];
   loading: boolean;
+  testPatientIds: Set<string>;
+  searchTerm: string;
+  setSearchTerm: (term: string) => void;
+  onDeletePatient: (patientId: string) => void;
 }) => {
   if (!show) return null;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white p-6 rounded-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto">
+      <div className="bg-white p-6 rounded-2xl w-full max-w-6xl max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-xl font-bold text-red-900">👥 All Registered Patients</h3>
           <button
@@ -394,6 +427,32 @@ const PatientsModal = ({
           >
             Close
           </button>
+        </div>
+
+        {/* Search bar in modal */}
+        <div className="mb-4">
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search by name, patient ID, or phone..."
+            className="w-full p-3 border rounded-lg bg-blue-50 border-blue-200 focus:ring-2 focus:ring-blue-400 text-black font-semibold"
+          />
+        </div>
+
+        {/* Legend */}
+        <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+          <h4 className="font-semibold text-gray-700 mb-2">Legend:</h4>
+          <div className="flex flex-wrap gap-4 text-sm">
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 bg-white border border-gray-300"></div>
+              <span>Has test records</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 bg-yellow-100 border border-yellow-300"></div>
+              <span>No test records yet</span>
+            </div>
+          </div>
         </div>
 
         {loading ? (
@@ -405,8 +464,8 @@ const PatientsModal = ({
             <table className="w-full border-collapse border border-rose-200">
               <thead>
                 <tr className="bg-rose-100 text-red-900 font-bold">
-                  {["#", "Patient ID", "Name", "DOB", "Age", "Gender", "Phone", "Blood Group"].map((header) => (
-                    <th key={header} className="border border-rose-300 px-4 py-2">
+                  {["#", "Patient ID", "Name", "DOB", "Age", "Gender", "Phone", "Blood Group", "Status", "Actions"].map((header) => (
+                    <th key={header} className="border border-rose-300 px-3 py-2 text-center">
                       {header}
                     </th>
                   ))}
@@ -415,19 +474,44 @@ const PatientsModal = ({
               <tbody>
                 {patients.map((patient, idx) => {
                   const age = calculateAge(patient.dob);
+                  const hasTest = testPatientIds.has(patient.patientId);
                   
                   return (
-                    <tr key={patient.patientId} className="hover:bg-rose-50 text-center text-gray-700">
-                      <td className="border border-rose-300 px-4 py-2">{idx + 1}</td>
-                      <td className="border border-rose-300 px-4 py-2">{patient.patientId}</td>
-                      <td className="border border-rose-300 px-4 py-2">{patient.name}</td>
-                      <td className="border border-rose-300 px-4 py-2">
+                    <tr 
+                      key={patient.patientId} 
+                      className={`text-center text-gray-700 transition-colors ${
+                        hasTest 
+                          ? "hover:bg-rose-50 bg-white" 
+                          : "hover:bg-yellow-200 bg-yellow-100"
+                      }`}
+                    >
+                      <td className="border border-rose-300 px-3 py-2">{idx + 1}</td>
+                      <td className="border border-rose-300 px-3 py-2 font-medium">{patient.patientId}</td>
+                      <td className="border border-rose-300 px-3 py-2 font-medium">{patient.name}</td>
+                      <td className="border border-rose-300 px-3 py-2">
                         {patient.dob ? new Date(patient.dob).toLocaleDateString() : "N/A"}
                       </td>
-                      <td className="border border-rose-300 px-4 py-2">{age}</td>
-                      <td className="border border-rose-300 px-4 py-2">{patient.gender}</td>
-                      <td className="border border-rose-300 px-4 py-2">{patient.phone || "N/A"}</td>
-                      <td className="border border-rose-300 px-4 py-2">{patient.bloodGroup || "N/A"}</td>
+                      <td className="border border-rose-300 px-3 py-2">{age}</td>
+                      <td className="border border-rose-300 px-3 py-2">{patient.gender}</td>
+                      <td className="border border-rose-300 px-3 py-2">{patient.phone || "N/A"}</td>
+                      <td className="border border-rose-300 px-3 py-2">{patient.bloodGroup || "N/A"}</td>
+                      <td className="border border-rose-300 px-3 py-2">
+                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                          hasTest 
+                            ? "bg-green-100 text-green-800" 
+                            : "bg-red-100 text-red-800"
+                        }`}>
+                          {hasTest ? "Has Tests" : "No Tests"}
+                        </span>
+                      </td>
+                      <td className="border border-rose-300 px-3 py-2">
+                        <button
+                          onClick={() => onDeletePatient(patient.patientId)}
+                          className="bg-red-600 text-white px-2 py-1 rounded text-xs hover:bg-red-700 transition-colors"
+                        >
+                          Delete
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
@@ -444,7 +528,16 @@ const PatientsModal = ({
 export default function AllResults() {
   const { accessGranted, keyInput, setKeyInput, handleLogin } = useAuth();
   const { allResults, patients, loading, error, setAllResults, setPatients } = useTestData();
-  const { showModal, setShowModal, allPatients, loadingPatients } = usePatientModal();
+  const { 
+    showModal, 
+    setShowModal, 
+    allPatients, 
+    loadingPatients, 
+    testPatientIds, 
+    patientSearchTerm, 
+    setPatientSearchTerm,
+    refetchPatients
+  } = usePatientModal();
   
   const [searchTerm, setSearchTerm] = useState("");
   const [searchField, setSearchField] = useState<SearchField>("patientId");
@@ -481,6 +574,36 @@ export default function AllResults() {
       alert("❌ Failed to delete record");
     }
   }, [setAllResults]);
+
+  const handleDeletePatient = useCallback(async (patientId: string) => {
+    if (!confirm("Are you sure you want to delete this patient? This will also delete all their test records.")) return;
+    
+    try {
+      // Delete patient document
+      await deleteDoc(doc(db, "patients", patientId));
+      
+      // Delete all test records for this patient
+      const testsToDelete = allResults.filter(test => test.patientId === patientId);
+      const deletePromises = testsToDelete.map(test => deleteDoc(doc(db, "tests", test.id)));
+      await Promise.all(deletePromises);
+      
+      // Update local state
+      setAllResults(prev => prev.filter(rec => rec.patientId !== patientId));
+      setPatients(prev => {
+        const newPatients = { ...prev };
+        delete newPatients[patientId];
+        return newPatients;
+      });
+      
+      // Refresh modal data
+      await refetchPatients();
+      
+      alert("✅ Patient and all related test records deleted successfully");
+    } catch (err) {
+      console.error("Delete patient failed:", err);
+      alert("❌ Failed to delete patient");
+    }
+  }, [allResults, setAllResults, setPatients, refetchPatients]);
 
   const handleSaveEdit = useCallback(async () => {
     if (!editData) return;
@@ -563,6 +686,10 @@ export default function AllResults() {
         onClose={() => setShowModal(false)}
         patients={allPatients}
         loading={loadingPatients}
+        testPatientIds={testPatientIds}
+        searchTerm={patientSearchTerm}
+        setSearchTerm={setPatientSearchTerm}
+        onDeletePatient={handleDeletePatient}
       />
     </div>
   );
