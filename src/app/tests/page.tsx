@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { db } from "../../lib/firebase";
-import { collection, addDoc, query, where, getDocs } from "firebase/firestore";
+import { collection, addDoc, query, where, getDocs, updateDoc, doc } from "firebase/firestore";
 
 type TestData = {
   patientId: string;
@@ -9,6 +9,7 @@ type TestData = {
   genotype?: string;
   bloodGroup?: string;
   dateTaken: string;
+  lastUpdated?: string;
 };
 
 type PatientData = {
@@ -33,11 +34,15 @@ export default function TestAndSearch() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  
+  // Track if we're updating existing record
+  const [existingRecordId, setExistingRecordId] = useState<string | null>(null);
+  const [isUpdateMode, setIsUpdateMode] = useState(false);
 
   // 🔑 Access Key modal state
   const [showModal, setShowModal] = useState(true);
   const [keyInput, setKeyInput] = useState("");
-  const ACCESS_KEY = "savgen25"; // change your key here
+  const ACCESS_KEY = "savgen25";
 
   useEffect(() => {
     const hasAccess = sessionStorage.getItem("hasAccess");
@@ -55,57 +60,113 @@ export default function TestAndSearch() {
     }
   };
 
-  // Handle input change for test form
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  // Submit test result
-  // Submit test result
-const handleSubmitTest = async (e: React.FormEvent) => {
-  e.preventDefault();
-  if (!formData.patientId.trim()) {
-    setMessage({ type: "error", text: "⚠️ Patient ID is required." });
-    return;
-  }
-  setSubmitting(true);
-  setMessage(null);
+  // Check for existing test record when Patient ID is entered
+  const checkExistingTest = async (pid: string) => {
+    if (!pid.trim()) return;
+    
+    try {
+      const q = query(collection(db, "tests"), where("patientId", "==", pid.trim()));
+      const querySnapshot = await getDocs(q);
+      
+      if (!querySnapshot.empty) {
+        // Found existing test record
+        const existingTest = querySnapshot.docs[0];
+        const testData = existingTest.data() as TestData;
+        
+        setFormData({
+          patientId: pid.trim(),
+          malaria: testData.malaria || "",
+          genotype: testData.genotype || "",
+          bloodGroup: testData.bloodGroup || "",
+        });
+        setExistingRecordId(existingTest.id);
+        setIsUpdateMode(true);
+        setMessage({ type: "success", text: "📝 Existing record loaded. You can update it." });
+      } else {
+        setIsUpdateMode(false);
+        setExistingRecordId(null);
+      }
+    } catch (err) {
+      console.error("Error checking existing test:", err);
+    }
+  };
 
-  try {
-    // 🔍 Check if patient exists in patients collection
-    const patientQ = query(
-      collection(db, "patients"),
-      where("patientId", "==", formData.patientId.trim())
-    );
-    const patientSnap = await getDocs(patientQ);
+  // Trigger check when Patient ID field loses focus
+  const handlePatientIdBlur = () => {
+    if (formData.patientId.trim()) {
+      checkExistingTest(formData.patientId);
+    }
+  };
 
-    if (patientSnap.empty) {
-      // ❌ No patient with this ID
-      setMessage({ type: "error", text: "❌ Patient ID not available." });
-      setSubmitting(false);
+  // Submit or Update test result
+  const handleSubmitTest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.patientId.trim()) {
+      setMessage({ type: "error", text: "⚠️ Patient ID is required." });
       return;
     }
+    setSubmitting(true);
+    setMessage(null);
 
-    // ✅ Patient exists → Add test record
-    await addDoc(collection(db, "tests"), {
-      patientId: formData.patientId.trim(),
-      malaria: formData.malaria || null,
-      genotype: formData.genotype || null,
-      bloodGroup: formData.bloodGroup || null,
-      dateTaken: new Date().toISOString(),
-    });
+    try {
+      // 🔍 Check if patient exists
+      const patientQ = query(
+        collection(db, "patients"),
+        where("patientId", "==", formData.patientId.trim())
+      );
+      const patientSnap = await getDocs(patientQ);
 
-    setMessage({ type: "success", text: "✅ Test submitted successfully!" });
-    setPatientId(formData.patientId.trim()); // Prefill search input
+      if (patientSnap.empty) {
+        setMessage({ type: "error", text: "❌ Patient ID not found. Please register patient first." });
+        setSubmitting(false);
+        return;
+      }
+
+      // Check if updating existing record
+      if (isUpdateMode && existingRecordId) {
+        // ✏️ UPDATE existing record
+        const testRef = doc(db, "tests", existingRecordId);
+        await updateDoc(testRef, {
+          malaria: formData.malaria || null,
+          genotype: formData.genotype || null,
+          bloodGroup: formData.bloodGroup || null,
+          lastUpdated: new Date().toISOString(),
+        });
+        setMessage({ type: "success", text: "✅ Test record updated successfully!" });
+      } else {
+        // ➕ CREATE new record
+        await addDoc(collection(db, "tests"), {
+          patientId: formData.patientId.trim(),
+          malaria: formData.malaria || null,
+          genotype: formData.genotype || null,
+          bloodGroup: formData.bloodGroup || null,
+          dateTaken: new Date().toISOString(),
+          lastUpdated: new Date().toISOString(),
+        });
+        setMessage({ type: "success", text: "✅ Test submitted successfully!" });
+      }
+
+      setPatientId(formData.patientId.trim());
+      clearForm();
+    } catch (err) {
+      console.error(err);
+      setMessage({ type: "error", text: "❌ Failed to submit test." });
+    }
+
+    setSubmitting(false);
+  };
+
+  // Clear form
+  const clearForm = () => {
     setFormData({ patientId: "", malaria: "", genotype: "", bloodGroup: "" });
-  } catch (err) {
-    console.error(err);
-    setMessage({ type: "error", text: "❌ Failed to submit test." });
-  }
-
-  setSubmitting(false);
-};
+    setIsUpdateMode(false);
+    setExistingRecordId(null);
+  };
 
   // Search patient records
   const handleSearch = async (e: React.FormEvent) => {
@@ -121,9 +182,9 @@ const handleSubmitTest = async (e: React.FormEvent) => {
 
     setLoading(true);
     try {
-      // Fetch test records
       const q = query(collection(db, "tests"), where("patientId", "==", patientId.trim()));
       const querySnapshot = await getDocs(q);
+      
       if (querySnapshot.empty) {
         setError("⚠️ No record found for this Patient ID.");
         setRecords([]);
@@ -131,18 +192,16 @@ const handleSubmitTest = async (e: React.FormEvent) => {
       } else {
         const allRecords = querySnapshot.docs.map(doc => doc.data() as TestData);
         setRecords(allRecords);
+        
         // Fetch patient info
         const patientQ = query(collection(db, "patients"), where("patientId", "==", patientId.trim()));
         const patientSnap = await getDocs(patientQ);
         if (!patientSnap.empty) {
           setPatient(patientSnap.docs[0].data() as PatientData);
-        } else {
-          setPatient(null);
         }
       }
     } catch (err) {
       setError("❌ Error searching records.");
-      setRecords([]);
       console.error(err);
     }
     setLoading(false);
@@ -150,7 +209,6 @@ const handleSubmitTest = async (e: React.FormEvent) => {
 
   return (
     <>
-      {/* 🔑 Access Key Modal */}
       {showModal && (
         <div className="fixed inset-0 flex items-center justify-center bg-black/70 z-50">
           <div className="bg-white p-6 rounded-xl shadow-xl w-80 text-center">
@@ -172,22 +230,38 @@ const handleSubmitTest = async (e: React.FormEvent) => {
         </div>
       )}
 
-      {/* Page Content (hidden until key is entered) */}
       {!showModal && (
         <div className="min-h-screen bg-gradient-to-br from-black via-red-950 to-black flex flex-col items-center py-8 px-2 sm:px-4 space-y-8">
           {/* Test Submission Form */}
           <section className="w-full max-w-2xl bg-white/95 p-6 sm:p-8 rounded-2xl shadow-xl border border-red-200">
-            <h2 className="text-2xl font-bold text-red-900 text-center mb-6">Submit Test Result</h2>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-red-900">
+                {isUpdateMode ? "Update Test Result" : "Submit Test Result"}
+              </h2>
+              {isUpdateMode && (
+                <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-semibold">
+                  ✏️ Edit Mode
+                </span>
+              )}
+            </div>
+            
             <form onSubmit={handleSubmitTest} className="space-y-4">
-              <input
-                type="text"
-                name="patientId"
-                value={formData.patientId}
-                onChange={handleChange}
-                placeholder="Patient ID"
-                className="w-full p-3 border rounded-lg bg-rose-50 border-rose-200 focus:ring-2 focus:ring-red-400 text-black font-bold"
-                required
-              />
+              <div>
+                <input
+                  type="text"
+                  name="patientId"
+                  value={formData.patientId}
+                  onChange={handleChange}
+                  onBlur={handlePatientIdBlur}
+                  placeholder="Patient ID"
+                  className="w-full p-3 border rounded-lg bg-rose-50 border-rose-200 focus:ring-2 focus:ring-red-400 text-black font-bold"
+                  required
+                />
+                <p className="text-xs text-gray-600 mt-1">
+                  💡 Enter Patient ID and tab out to load existing test data
+                </p>
+              </div>
+
               <select
                 name="malaria"
                 value={formData.malaria}
@@ -199,6 +273,7 @@ const handleSubmitTest = async (e: React.FormEvent) => {
                 <option value="Positive">Positive</option>
                 <option value="Inconclusive">Inconclusive</option>
               </select>
+
               <select
                 name="genotype"
                 value={formData.genotype}
@@ -213,6 +288,7 @@ const handleSubmitTest = async (e: React.FormEvent) => {
                 <option value="SC">SC</option>
                 <option value="CC">CC</option>
               </select>
+
               <select
                 name="bloodGroup"
                 value={formData.bloodGroup}
@@ -229,17 +305,33 @@ const handleSubmitTest = async (e: React.FormEvent) => {
                 <option value="O+">O+</option>
                 <option value="O-">O-</option>
               </select>
-              <button
-                type="submit"
-                disabled={submitting}
-                className="w-full py-3 bg-gradient-to-r from-red-700 to-red-900 text-white rounded-lg font-bold hover:scale-105 transition"
-              >
-                {submitting ? "Submitting..." : "Submit Test"}
-              </button>
+
+              <div className="flex gap-3">
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="flex-1 py-3 bg-gradient-to-r from-red-700 to-red-900 text-white rounded-lg font-bold hover:scale-105 transition disabled:opacity-60"
+                >
+                  {submitting ? "Processing..." : isUpdateMode ? "Update Test" : "Submit Test"}
+                </button>
+                
+                <button
+                  type="button"
+                  onClick={clearForm}
+                  className="px-6 py-3 bg-gray-500 text-white rounded-lg font-bold hover:bg-gray-600 transition"
+                >
+                  Clear
+                </button>
+              </div>
+
               {message && (
-                <p className={`mt-2 text-center font-semibold ${message.type === "success" ? "text-green-700" : "text-red-700"}`}>
+                <div className={`p-3 rounded-lg text-center font-semibold ${
+                  message.type === "success" 
+                    ? "bg-green-100 text-green-700 border border-green-400" 
+                    : "bg-red-100 text-red-700 border border-red-400"
+                }`}>
                   {message.text}
-                </p>
+                </div>
               )}
             </form>
           </section>
@@ -257,7 +349,7 @@ const handleSubmitTest = async (e: React.FormEvent) => {
               />
               <button
                 type="submit"
-                className="px-6 py-3 bg-gradient-to-r from-red-700 to-red-900 text-white rounded-lg font-bold hover:scale-105 transition"
+                className="px-6 py-3 bg-gradient-to-r from-red-700 to-red-900 text-white rounded-lg font-bold hover:scale-105 transition disabled:opacity-60"
                 disabled={loading}
               >
                 {loading ? "Searching..." : "Search"}
@@ -272,14 +364,13 @@ const handleSubmitTest = async (e: React.FormEvent) => {
               </div>
             )}
 
-            {/* Combined Result Card */}
             {records.length > 0 && (
               <div className="bg-gradient-to-tr from-rose-50 to-rose-100 p-6 rounded-xl border border-rose-300 shadow-md">
                 <h3 className="text-xl font-bold text-red-900 mb-4">
                   Patient ID: {records[0].patientId}
                 </h3>
                 {patient && (
-                  <h4 className="text-lg font-semibold text-gray-800 mb-2">
+                  <h4 className="text-lg font-semibold text-gray-800 mb-4">
                     Name: {patient.name} | Age: {(() => {
                       const dob = new Date(patient.dob);
                       const today = new Date();
@@ -287,30 +378,42 @@ const handleSubmitTest = async (e: React.FormEvent) => {
                       const m = today.getMonth() - dob.getMonth();
                       if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
                       return age;
-                    })()}
+                    })()} | Gender: {patient.gender}
                   </h4>
                 )}
                 <ul className="space-y-4">
                   {records.map((rec, idx) => (
                     <li
                       key={idx}
-                      className="flex flex-col md:flex-row md:justify-between md:items-center border-b border-rose-200 pb-2 last:border-b-0"
+                      className="bg-white p-4 rounded-lg shadow border border-rose-200"
                     >
-                      <span className="font-semibold text-gray-700">
-                        Malaria: <span className="text-red-900">{rec.malaria || "N/A"}</span>
-                      </span>
-                      <span className="font-semibold text-gray-700">
-                        Genotype: <span className="text-red-900">{rec.genotype || "N/A"}</span>
-                      </span>
-                      <span className="font-semibold text-gray-700">
-                        Blood Group: <span className="text-red-900">{rec.bloodGroup || "N/A"}</span>
-                      </span>
-                      <span className="font-semibold text-gray-700">
-                        Date Taken:{" "}
-                        <span className="text-red-900">
-                          {rec.dateTaken ? new Date(rec.dateTaken).toLocaleDateString() : ""}
-                        </span>
-                      </span>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <span className="text-sm text-gray-600">Malaria:</span>
+                          <p className="font-bold text-red-900">{rec.malaria || "N/A"}</p>
+                        </div>
+                        <div>
+                          <span className="text-sm text-gray-600">Genotype:</span>
+                          <p className="font-bold text-red-900">{rec.genotype || "N/A"}</p>
+                        </div>
+                        <div>
+                          <span className="text-sm text-gray-600">Blood Group:</span>
+                          <p className="font-bold text-red-900">{rec.bloodGroup || "N/A"}</p>
+                        </div>
+                        <div>
+                          <span className="text-sm text-gray-600">Date Taken:</span>
+                          <p className="font-bold text-red-900">
+                            {rec.dateTaken ? new Date(rec.dateTaken).toLocaleDateString() : "N/A"}
+                          </p>
+                        </div>
+                        {rec.lastUpdated && (
+                          <div className="col-span-2">
+                            <span className="text-xs text-gray-500">
+                              Last updated: {new Date(rec.lastUpdated).toLocaleString()}
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     </li>
                   ))}
                 </ul>
