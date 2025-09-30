@@ -1,14 +1,17 @@
 "use client";
 import { useState, useEffect } from "react";
 import { db } from "../../lib/firebase";
-import { collection, query, where, getDocs } from "firebase/firestore";
+import { collection, query, where, getDocs, doc, updateDoc } from "firebase/firestore";
 
 type TestData = {
+  id: string;
   patientId: string;
-  malaria: string;
-  genotype: string;
+  malaria?: string;
+  genotype?: string;
   bloodGroup?: string;
   dateTaken: string;
+  lastUpdated?: string;
+  cardRecorded?: boolean;
 };
 
 type PatientData = {
@@ -29,7 +32,7 @@ export default function Search() {
   // 🔑 Access key modal state
   const [showModal, setShowModal] = useState(true);
   const [keyInput, setKeyInput] = useState("");
-  const ACCESS_KEY = "savgen25"; // change if needed
+  const ACCESS_KEY = "savgen25";
 
   useEffect(() => {
     if (sessionStorage.getItem("hasAccess") === "true") {
@@ -51,6 +54,7 @@ export default function Search() {
     e.preventDefault();
     setRecords([]);
     setError("");
+    setPatient(null);
 
     if (!patientId.trim()) {
       setError("❌ Please enter a Patient ID");
@@ -89,7 +93,10 @@ export default function Search() {
         setRecords([]);
         setError("⚠️ No test records found for this Patient ID.");
       } else {
-        const allRecords = testSnap.docs.map((doc) => doc.data() as TestData);
+        const allRecords = testSnap.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...docSnap.data()
+        } as TestData));
         setRecords(allRecords);
       }
     } catch (err) {
@@ -102,26 +109,50 @@ export default function Search() {
     setLoading(false);
   };
 
+  // Handle card recorded checkbox toggle
+  const handleCardRecordedToggle = async (recordId: string, currentValue: boolean) => {
+    try {
+      const newValue = !currentValue;
+      
+      // Update in Firestore
+      await updateDoc(doc(db, "tests", recordId), {
+        cardRecorded: newValue,
+        lastUpdated: new Date().toISOString()
+      });
+
+      // Update local state
+      setRecords(prev => 
+        prev.map(rec => 
+          rec.id === recordId 
+            ? { ...rec, cardRecorded: newValue, lastUpdated: new Date().toISOString() }
+            : rec
+        )
+      );
+    } catch (err) {
+      console.error("Error updating card status:", err);
+      alert("❌ Failed to update card status");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-black via-red-950 to-black flex items-center justify-center py-8 px-2 sm:px-4">
       {/* 🔑 Access Key Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-          <div className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-md border border-red-200">
-            <h2 className="text-xl font-bold text-red-900 mb-4 text-center">
-              Enter Access Key
-            </h2>
-            <form onSubmit={handleKeySubmit} className="flex flex-col gap-4">
+          <div className="bg-white/95 p-6 sm:p-8 rounded-2xl shadow-xl border border-red-300 max-w-sm w-full text-center">
+            <h2 className="text-2xl font-bold text-red-900 mb-4">Enter Access Key</h2>
+            <form onSubmit={handleKeySubmit} className="space-y-4">
               <input
                 type="password"
                 value={keyInput}
                 onChange={(e) => setKeyInput(e.target.value)}
-                placeholder="Enter key"
-                className="p-3 border rounded-lg bg-rose-50 border-rose-200 focus:ring-2 focus:ring-red-400 text-black font-bold"
+                placeholder="Enter secret key"
+                className="w-full p-3 border rounded-lg bg-rose-50 border-rose-200 focus:ring-2 focus:ring-red-400 text-black font-bold placeholder:text-gray-700"
+                required
               />
               <button
                 type="submit"
-                className="py-2 px-4 bg-gradient-to-r from-red-700 to-red-900 text-white rounded-lg font-bold hover:scale-105 transition"
+                className="w-full bg-gradient-to-r from-red-700 to-red-900 text-white py-3 rounded-lg font-bold hover:scale-105 transition"
               >
                 Unlock
               </button>
@@ -150,7 +181,7 @@ export default function Search() {
             />
             <button
               type="submit"
-              className="px-6 py-3 bg-gradient-to-r from-red-700 to-red-900 text-white rounded-lg font-bold hover:scale-105 transition"
+              className="px-6 py-3 bg-gradient-to-r from-red-700 to-red-900 text-white rounded-lg font-bold hover:scale-105 transition disabled:opacity-60"
               disabled={loading}
             >
               {loading ? "Searching..." : "Search"}
@@ -164,6 +195,12 @@ export default function Search() {
               className="inline-block px-6 py-2 bg-rose-100 border border-rose-300 text-red-900 font-semibold rounded-lg shadow hover:bg-rose-200 transition"
             >
               📋 View All Results
+            </a>
+            <a
+              href="/all-patients"
+              className="inline-block px-6 py-2 bg-blue-100 border border-blue-300 text-blue-900 font-semibold rounded-lg shadow hover:bg-blue-200 transition"
+            >
+              👥 View All Patients
             </a>
           </div>
 
@@ -183,54 +220,72 @@ export default function Search() {
                 Patient ID: {records[0].patientId}
               </h3>
               {patient && (
-                <h4 className="text-lg font-semibold text-gray-800 mb-2">
+                <h4 className="text-lg font-semibold text-gray-800 mb-4">
                   Name: {patient.name} | Age:{" "}
                   {(() => {
                     const dob = new Date(patient.dob);
                     const today = new Date();
                     let age = today.getFullYear() - dob.getFullYear();
                     const m = today.getMonth() - dob.getMonth();
-                    if (
-                      m < 0 ||
-                      (m === 0 && today.getDate() < dob.getDate())
-                    )
-                      age--;
+                    if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
                     return age;
-                  })()}
+                  })()} | Gender: {patient.gender}
                 </h4>
               )}
               <ul className="space-y-4">
                 {records.map((rec, idx) => (
                   <li
-                    key={idx}
-                    className="flex flex-col md:flex-row md:justify-between md:items-center border-b border-rose-200 pb-2 last:border-b-0"
+                    key={rec.id}
+                    className="bg-white p-4 rounded-lg shadow border border-rose-200"
                   >
-                    <span className="font-semibold text-gray-700">
-                      Malaria:{" "}
-                      <span className="text-red-900">
-                        {rec.malaria || "N/A"}
-                      </span>
-                    </span>
-                    <span className="font-semibold text-gray-700">
-                      Genotype:{" "}
-                      <span className="text-red-900">
-                        {rec.genotype || "N/A"}
-                      </span>
-                    </span>
-                    <span className="font-semibold text-gray-700">
-                      Blood Group:{" "}
-                      <span className="text-red-900">
-                        {rec.bloodGroup || "N/A"}
-                      </span>
-                    </span>
-                    <span className="font-semibold text-gray-700">
-                      Date Taken:{" "}
-                      <span className="text-red-900">
-                        {rec.dateTaken
-                          ? new Date(rec.dateTaken).toLocaleDateString()
-                          : ""}
-                      </span>
-                    </span>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                      <div>
+                        <span className="text-sm text-gray-600">Malaria:</span>
+                        <p className="font-bold text-red-900">{rec.malaria || "N/A"}</p>
+                      </div>
+                      <div>
+                        <span className="text-sm text-gray-600">Genotype:</span>
+                        <p className="font-bold text-red-900">{rec.genotype || "N/A"}</p>
+                      </div>
+                      <div>
+                        <span className="text-sm text-gray-600">Blood Group:</span>
+                        <p className="font-bold text-red-900">{rec.bloodGroup || "N/A"}</p>
+                      </div>
+                      <div>
+                        <span className="text-sm text-gray-600">Date Taken:</span>
+                        <p className="font-bold text-red-900">
+                          {rec.dateTaken ? new Date(rec.dateTaken).toLocaleDateString() : "N/A"}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Card Recorded Checkbox */}
+                    <div className="border-t border-rose-200 pt-3 mt-3">
+                      <label className="flex items-center space-x-3 cursor-pointer group">
+                        <input
+                          type="checkbox"
+                          checked={rec.cardRecorded || false}
+                          onChange={() => handleCardRecordedToggle(rec.id, rec.cardRecorded || false)}
+                          className="w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-2 focus:ring-green-500 cursor-pointer"
+                        />
+                        <span className="text-sm font-semibold text-gray-700 group-hover:text-green-700 transition-colors">
+                          Card Given Out
+                        </span>
+                        {rec.cardRecorded && (
+                          <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full font-bold">
+                            ✓ Recorded
+                          </span>
+                        )}
+                      </label>
+                    </div>
+
+                    {rec.lastUpdated && (
+                      <div className="mt-2">
+                        <span className="text-xs text-gray-500">
+                          Last updated: {new Date(rec.lastUpdated).toLocaleString()}
+                        </span>
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>
