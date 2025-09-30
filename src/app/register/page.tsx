@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { db } from "../../lib/firebase";
-import { collection, addDoc } from "firebase/firestore";
+import { collection, addDoc, query, where, getDocs } from "firebase/firestore";
 
 type PatientData = {
   patientId: string;
@@ -69,18 +69,48 @@ export default function RegisterPatient() {
     setLoading(false);
   };
 
-  // Optionally: Generate Patient ID
-  const generateId = () => {
-    const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    const digits = "0123456789";
+  // Check if ID exists in Firestore
+  const checkIdExists = async (patientId: string): Promise<boolean> => {
+    try {
+      const q = query(collection(db, "patients"), where("patientId", "==", patientId));
+      const querySnapshot = await getDocs(q);
+      return !querySnapshot.empty;
+    } catch (error) {
+      console.error("Error checking ID:", error);
+      return false;
+    }
+  };
 
-    const letter = letters[Math.floor(Math.random() * letters.length)];
-    const numberPart = Array.from({ length: 3 }, () => digits[Math.floor(Math.random() * 10)]).join("");
+  // Generate Unique Patient ID
+  const generateId = async () => {
+    setLoading(true);
+    setMessage(null);
+    try {
+      const digits = "0123456789";
+      let id: string;
+      let exists: boolean;
 
-    const pos = Math.floor(Math.random() * 4);
-    const id = numberPart.slice(0, pos) + letter + numberPart.slice(pos);
+      do {
+        // Generate random 4-digit number
+        const randomPart = Array.from(
+          { length: 4 },
+          () => digits[Math.floor(Math.random() * 10)]
+        ).join("");
 
-    setFormData((prev) => ({ ...prev, patientId: id }));
+        // Combine: 8-digit ID
+        id = randomPart;
+
+        // Check if this ID already exists in Firestore
+        exists = await checkIdExists(id);
+      } while (exists); // Keep generating until unique
+
+      setFormData((prev) => ({ ...prev, patientId: id }));
+      setMessage({ type: "success", text: `✅ Unique ID generated: ${id}` });
+    } catch (error) {
+      console.error("Error generating ID:", error);
+      setMessage({ type: "error", text: "❌ Failed to generate ID. Try again." });
+    }
+    setLoading(false);
   };
 
   return (
@@ -133,9 +163,10 @@ export default function RegisterPatient() {
                 <button
                   type="button"
                   onClick={generateId}
-                  className="bg-gradient-to-r from-red-700 to-red-900 text-white px-4 py-2 rounded-lg font-semibold hover:scale-105 transition"
+                  disabled={loading}
+                  className="bg-gradient-to-r from-red-700 to-red-900 text-white px-4 py-2 rounded-lg font-semibold hover:scale-105 transition disabled:opacity-60"
                 >
-                  Generate
+                  {loading ? "..." : "Generate"}
                 </button>
               </div>
             </div>
